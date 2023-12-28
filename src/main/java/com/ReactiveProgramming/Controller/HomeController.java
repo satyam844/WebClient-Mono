@@ -6,13 +6,17 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
 
 
 import org.reactivestreams.Subscription;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,13 +24,20 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.ReactiveProgramming.Entity.PersonalInfo;
 import com.ReactiveProgramming.Entity.User;
+import com.ReactiveProgramming.Entity.UserInfo;
+import com.ReactiveProgramming.ServiceImpl.PersonalInfoServiceImpl;
+import com.ReactiveProgramming.ServiceImpl.UserInfoServiceImpl;
+import com.ReactiveProgramming.ServiceImpl.UserServiceImpl;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.netty.handler.codec.http.HttpResponseStatus;
 import reactor.core.CoreSubscriber;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.function.Tuple2;
 
 
 @RestController
@@ -36,32 +47,43 @@ public class HomeController {
 	@Autowired
 	ObjectMapper objectMapper;
 	
-	@GetMapping("/data")
-	public Mono<ResponseEntity<Void>> func(){
+	@Autowired
+	UserServiceImpl userServiceImpl;
+	
+	@Autowired
+	PersonalInfoServiceImpl personalInfoServiceImpl;
+	
+	@Autowired
+	UserInfoServiceImpl userInfoServiceImpl;
+	
+	@PostMapping("/user")
+	public Mono<ResponseEntity<Void>> func(@RequestBody String str){
 		System.out.println("Inside this controller");
-//		if(str != null) {
-//			Mono<ResponseEntity<Void>> reponse = Mono.just(ResponseEntity.ok().build());
-//			System.out.println("HHHHHHHHHHHHHHHHH");
-//			return Mono.zip(processRequest(), reponse)
-//					.subscribeOn(Schedulers.boundedElastic()) // Specify the scheduler if needed
-//                    .then(Mono.defer(() -> Mono.just(ResponseEntity.ok().build())));
-			return Mono.fromCallable(()->processRequest());
-//			}
-//		else {
-//			return Mono.just(ResponseEntity.noContent().build());
-//		}
+		if(str != null) {
+			Mono<ResponseEntity<Void>> response = Mono.just(ResponseEntity.status(HttpStatus.OK).build());
+			Mono<Void> process = Mono.fromRunnable(() -> processRequest(str));
+			System.out.println("HHHHHHHHHHHHHHHHH");
+			Mono<Tuple2<ResponseEntity<Void>, Void>> combinedMono = Mono.zip(response, process);
+			return combinedMono.subscribeOn(Schedulers.boundedElastic())
+                    .then(Mono.defer(() -> Mono.just(ResponseEntity.ok().build())));
+			}
+		else {
+			return Mono.just(ResponseEntity.noContent().build());
+		}
 	}
-	public ResponseEntity processRequest() {
+	public void processRequest(String str) {
+		System.out.println("Inside process Request");
 		try {
-			System.out.println("Thread Sleeping");
-			Thread.currentThread().sleep(30000);
-			System.out.println("Thread Woke Up");
-		} catch (InterruptedException e) {
+			User user = objectMapper.readValue(str, User.class);
+			Mono<User> insert = userServiceImpl.insertUser(user);
+			insert.subscribe(data -> {
+				System.out.println("User "+ user.toString() + "inserted to db");
+			});
+		} catch (JsonProcessingException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		return ResponseEntity.ok().build();
-		
+		return;
 	}
 	
 	@GetMapping("/test")
@@ -94,33 +116,39 @@ public class HomeController {
 //				s.request(1);;
 //			}
 //		});
-		Mono<String> monoPublisher2 = Mono.just(getData());
-		System.out.println(Thread.currentThread().getId() +" Hello from main");
-		monoPublisher2.subscribe(data -> {
-			System.out.println(data);
-		});
+		
+		
+//		Mono<String> monoPublisher2 = Mono.just(getData());
+//		System.out.println(Thread.currentThread().getId() +" Hello from main");
+//		monoPublisher2.subscribe(data -> {
+//			System.out.println(data);
+//		});
 	}
 	
-	public String getData() {
+	
+	@PostMapping("/personalInfo")
+	public Mono<String> personalInfo(@RequestBody String str){
 		try {
-			System.out.println(Thread.currentThread().getId()+" Hello from getData()");
-			Thread.currentThread().sleep(6000);
-		} catch (InterruptedException e) {
+			PersonalInfo info = objectMapper.readValue(str, PersonalInfo.class);
+			Mono<PersonalInfo> data =	personalInfoServiceImpl.insertPersonalInfoToMongo(info);
+			data.subscribe();
+		 	return Mono.just("Personal Info stored in DB");
+		 
+		} catch (JsonProcessingException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
+			return Mono.just("Data not in correct structure");
 		}
-		return "Hey";
+		
 	}
 	
-	@GetMapping("/{userId}")
-	public Mono<User> home(@PathVariable("userId") String userId) throws IOException {
-		System.out.println(Thread.currentThread().getId()+" -----------------  ");
-		User user = new User("Satyam","Sonker",24,"Palo-Alto");
-		Mono<String> mono1 = putUserInFile(user);
-		return mono1
-			//	.log()
-				.map(result -> user);
+	@GetMapping("/{id}")
+	public Mono<UserInfo> getUserInfo(@PathVariable("id") int id) throws IOException {
+		 
+		return userInfoServiceImpl.findUserPersonlInfo(id);
 	}
+	
+	
 	public Mono<String> putUserInFile(User user) throws IOException{
 		String pathStr = "/home/satyam/Desktop/reactiveProgramming/User"+user.getFName()+".json";
 		Path path = Paths.get(pathStr);
