@@ -18,7 +18,13 @@ public class UserServiceImpl implements UserService{
 	
 	@Override
 	public Mono<User> insertUser(User user) {
-		return userRepository.save(user);
+		
+		try {
+			return userRepository.save(user);
+		}catch(Exception e) {
+			e.printStackTrace();
+		}
+		return Mono.empty();
 	}
 
 	@Override
